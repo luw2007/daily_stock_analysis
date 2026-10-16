@@ -633,7 +633,7 @@ class DataFetcherManager:
 
     _DAILY_MARKET_FETCHER_SUPPORT = {
         "EfinanceFetcher": {"cn"},
-        "TencentFetcher": {"cn"},
+        "TencentFetcher": {"cn", "hk"},
         "AkshareFetcher": {"cn", "hk"},
         "TushareFetcher": {"cn", "hk"},
         "TickFlowFetcher": {"cn"},
@@ -1804,7 +1804,7 @@ class DataFetcherManager:
           2. PytdxFetcher (Priority 2) - 通达信
           3. BaostockFetcher (Priority 3)
           4. YfinanceFetcher (Priority 4)
-          5. TencentFetcher (Priority 5) - A 股最终兜底
+          5. TencentFetcher (Priority 5) - A 股/港股最终兜底（港股为前复权 hkfqkline）
         """
         from src.config import get_config
         from .efinance_fetcher import EfinanceFetcher

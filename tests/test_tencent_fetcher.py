@@ -18,6 +18,7 @@ from data_provider.tencent_fetcher import (
     _lots_to_shares,
     _to_tencent_symbol,
 )
+from data_provider.base import DataFetchError, DataFetcherManager
 
 
 def _read_priority_from_fresh_process(value: str | None) -> int:
@@ -499,3 +500,96 @@ def test_tencent_fetcher_does_not_multiply_star_market_volume() -> None:
     # volume * close / amount should be ~1 when units are consistent.
     ratio = float(df.iloc[1]["volume"]) * float(df.iloc[1]["close"]) / float(df.iloc[1]["amount"])
     assert 0.99 < ratio < 1.01
+
+
+_HK_ROW = ["2026-10-16", "424.000", "417.800", "428.800", "415.800", "18752869.000", {}, "0.210", "790119.876"]
+
+
+def _fake_response(payload):
+    response = MagicMock()
+    response.json.return_value = payload
+    return response
+
+
+def test_tencent_symbol_conversion_supports_hk_codes() -> None:
+    for code in ("HK00700", "hk00700", "00700", "700.HK", "00700.HK", "HK700"):
+        assert _to_tencent_symbol(code) == "hk00700", code
+    assert _to_tencent_symbol("HK03800") == "hk03800"
+    assert _to_tencent_symbol("600519") == "sh600519"
+
+
+def test_tencent_fetcher_parses_hk_qfq_daily_response() -> None:
+    payload = {"data": {"hk00700": {"qfqday": [_HK_ROW]}}}
+    with patch(
+        "data_provider.tencent_fetcher.requests.get", return_value=_fake_response(payload)
+    ) as request:
+        df = TencentFetcher().get_daily_data(
+            "HK00700", start_date="2026-10-01", end_date="2026-10-16"
+        )
+
+    assert request.call_args.args[0] == "https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get"
+    param = request.call_args.kwargs["params"]["param"]
+    assert param.startswith("hk00700,day,2026-10-01,2026-10-16,")
+    assert param.endswith(",qfq")
+    row = df.iloc[0]
+    assert (row["open"], row["high"], row["low"], row["close"]) == (424.0, 428.8, 415.8, 417.8)
+    # HK volume is already in shares (no x100); amount is 万 HKD -> HKD.
+    assert row["volume"] == 18752869.0
+    assert round(row["amount"]) == 7901198760
+
+
+def test_tencent_fetcher_hk_rejects_unadjusted_day_only_payload() -> None:
+    payload = {"data": {"hk00700": {"day": [_HK_ROW[:6]]}}}
+    with patch("data_provider.tencent_fetcher.requests.get", return_value=_fake_response(payload)):
+        try:
+            TencentFetcher().get_daily_data("HK00700", start_date="2026-10-01", end_date="2026-10-16")
+        except DataFetchError as exc:
+            assert "qfqday" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("unadjusted HK data must not be returned as qfq")
+
+
+def test_tencent_fetcher_hk_empty_payloads_return_empty_frame() -> None:
+    for payload in (
+        {"data": {"hk99999": {"day": []}}},
+        {"data": {"hk00700": {"qfqday": []}}},
+        {"data": []},
+        {},
+    ):
+        with patch("data_provider.tencent_fetcher.requests.get", return_value=_fake_response(payload)):
+            df = TencentFetcher().get_daily_data(
+                "HK00700", start_date="2026-10-01", end_date="2026-10-16"
+            )
+        assert df.empty
+
+
+def test_tencent_fetcher_hk_http_error_propagates() -> None:
+    response = MagicMock()
+    response.raise_for_status.side_effect = Exception("503")
+    with patch("data_provider.tencent_fetcher.requests.get", return_value=response):
+        try:
+            TencentFetcher().get_daily_data("HK00700", start_date="2026-10-01", end_date="2026-10-16")
+        except DataFetchError:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError("HTTP failure must surface so the manager can fail over")
+
+
+def test_hk_daily_routing_includes_tencent_and_manager_falls_back_to_it() -> None:
+    tencent = TencentFetcher()
+    assert "hk" in DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT["TencentFetcher"]
+    assert "cn" in DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT["TencentFetcher"]
+    kept = DataFetcherManager._filter_daily_fetchers_for_market([tencent], "hk")
+    assert [f.name for f in kept] == ["TencentFetcher"]
+
+    failing = MagicMock()
+    failing.name = "AkshareFetcher"
+    failing.priority = 1
+    failing.get_daily_data.side_effect = RuntimeError("RemoteDisconnected")
+    manager = DataFetcherManager(fetchers=[failing, tencent])
+
+    payload = {"data": {"hk00700": {"qfqday": [_HK_ROW]}}}
+    with patch("data_provider.tencent_fetcher.requests.get", return_value=_fake_response(payload)):
+        df, source = manager.get_daily_data("HK00700", start_date="2026-10-01", end_date="2026-10-16")
+    assert source == "TencentFetcher"
+    assert float(df.iloc[-1]["close"]) == 417.8

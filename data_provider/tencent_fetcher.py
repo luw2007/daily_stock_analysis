@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tencent direct daily K-line fetcher for A-share fallback routing."""
+"""Tencent direct daily K-line fetcher for A-share and HK-share fallback routing."""
 
 from __future__ import annotations
 
@@ -16,7 +16,14 @@ try:
 except ImportError:  # pragma: no cover - dependency is present in supported installs
     xcals = None
 
-from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, normalize_stock_code, is_bse_code
+from .base import (
+    BaseFetcher,
+    DataFetchError,
+    STANDARD_COLUMNS,
+    _is_hk_market,
+    is_bse_code,
+    normalize_stock_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +31,12 @@ _MAX_KLINE_BARS = 800
 
 
 class TencentFetcher(BaseFetcher):
-    """Fetch qfq daily K-line data from Tencent's direct quote endpoint."""
+    """Fetch qfq daily K-line data from Tencent's direct quote endpoint.
+
+    A-shares use ``fqkline`` (qfq). Hong Kong shares use ``hkfqkline``: the
+    A-share ``fqkline`` endpoint ignores the adjustment flag for ``hkXXXXX`` and
+    returns *unadjusted* ``day`` bars, so it must not be used to serve HK qfq.
+    """
 
     name = "TencentFetcher"
     # This direct endpoint is the last-resort A-share daily fallback. Keeping
@@ -34,6 +46,7 @@ class TencentFetcher(BaseFetcher):
     allow_empty_daily_data = True
 
     _KLINE_ENDPOINT = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    _HK_KLINE_ENDPOINT = "https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get"
     _QUOTE_ENDPOINT = "https://qt.gtimg.cn/q"
     _HTTP_TIMEOUT_SECONDS = 8
 
@@ -53,8 +66,9 @@ class TencentFetcher(BaseFetcher):
             if explicit_start and explicit_end
             else ","
         )
+        is_hk = symbol.startswith("hk")
         response = requests.get(
-            self._KLINE_ENDPOINT,
+            self._HK_KLINE_ENDPOINT if is_hk else self._KLINE_ENDPOINT,
             params={"param": f"{symbol},day,{explicit_window},{lookback},qfq"},
             headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/plain,*/*"},
             timeout=self._HTTP_TIMEOUT_SECONDS,
@@ -62,6 +76,11 @@ class TencentFetcher(BaseFetcher):
         response.raise_for_status()
         payload = response.json()
         rows = _extract_kline_rows(payload, symbol=symbol)
+        if is_hk and rows is None:
+            raise DataFetchError(
+                f"TencentFetcher HK response for {stock_code} has no adjusted qfqday series"
+            )
+        rows = rows or []
         if not rows:
             logger.info("TencentFetcher empty daily history for %s", stock_code)
             return _empty_daily_frame()
@@ -134,7 +153,23 @@ class TencentFetcher(BaseFetcher):
             return None
 
 
+def _to_tencent_hk_symbol(stock_code: str) -> str:
+    """Return ``hk00700`` for HK00700 / 00700.HK / 700.HK / bare 4-5 digit codes."""
+    if not _is_hk_market(stock_code):
+        return ""
+    code = normalize_stock_code(stock_code)
+    if code.isdigit():  # bare 4-5 digit code accepted by _is_hk_market
+        return f"hk{code.zfill(5)}"
+    digits = code[2:]
+    if code.startswith("HK") and digits.isdigit() and len(digits) == 5:
+        return f"hk{digits}"
+    return ""
+
+
 def _to_tencent_symbol(stock_code: str) -> str:
+    hk_symbol = _to_tencent_hk_symbol(stock_code)
+    if hk_symbol:
+        return hk_symbol
     raw_code = (stock_code or "").strip().upper()
     code = normalize_stock_code(stock_code)
     if not code or not code.isdigit() or len(code) != 6:
@@ -254,17 +289,35 @@ def _lots_to_shares(volume: Any, symbol: str = "") -> Any:
     return value if _is_star_market(symbol) else value * 100
 
 
-def _extract_kline_rows(payload: dict[str, Any], *, symbol: str) -> list[dict[str, Any]]:
+def _extract_kline_rows(payload: dict[str, Any], *, symbol: str) -> Optional[list[dict[str, Any]]]:
+    """Parse Tencent K-line rows.
+
+    Returns ``[]`` for a well-formed empty result. For HK symbols returns
+    ``None`` when rows exist only under the unadjusted ``day`` key, so a qfq
+    request is never silently answered with unadjusted data.
+    """
     data = payload.get("data") if isinstance(payload, dict) else None
     item = data.get(symbol) if isinstance(data, dict) else None
     if not isinstance(item, dict):
         return []
-    rows = item.get("qfqday") or item.get("day") or []
+    is_hk = symbol.startswith("hk")
+    if is_hk:
+        rows = item.get("qfqday") or []
+        if not rows and item.get("day"):
+            return None
+    else:
+        rows = item.get("qfqday") or item.get("day") or []
     result: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, list) or len(row) < 6:
             continue
-        amount: Optional[Any] = row[6] if len(row) > 6 else None
+        if is_hk:
+            # [date, open, close, high, low, volume(shares), {events}, turnover%, amount(万 HKD)]
+            amount = _wan_to_units(row[8]) if len(row) > 8 else None
+            volume: Any = row[5]
+        else:
+            amount = row[6] if len(row) > 6 else None
+            volume = _lots_to_shares(row[5], symbol)
         result.append(
             {
                 "date": str(row[0]),
@@ -272,8 +325,16 @@ def _extract_kline_rows(payload: dict[str, Any], *, symbol: str) -> list[dict[st
                 "close": row[2],
                 "high": row[3],
                 "low": row[4],
-                "volume": _lots_to_shares(row[5], symbol),
+                "volume": volume,
                 "amount": amount,
             }
         )
     return result
+
+
+def _wan_to_units(value: Any) -> Any:
+    """Convert Tencent HK turnover (万 HKD) to HKD."""
+    try:
+        return float(value) * 10000
+    except (TypeError, ValueError):
+        return None

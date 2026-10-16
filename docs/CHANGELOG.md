@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] `TencentFetcher` 支持港股日 K：走 `hkfqkline` 接口取前复权 `qfqday`（成交量为股，成交额由万港元换算为港元），并加入港股日线支持矩阵作为 Akshare/YFinance 等之后的兜底（默认优先级 5，可用 `TENCENT_PRIORITY` 调整）；若接口只返回未复权 `day` 则视为失败，不冒充 qfq。A 股行为不变。
 
 ## [3.33.0] - 2026-10-15
 
