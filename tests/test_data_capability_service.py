@@ -69,7 +69,7 @@ def _config(**overrides):
         "enable_realtime_quote": True,
         "enable_fundamental_pipeline": True,
         "realtime_source_priority": "tencent,akshare_sina,efinance,akshare_em",
-        "futu_hk_realtime_source_priority": "futu,longbridge,akshare,yfinance",
+        "futu_hk_realtime_source_priority": "futu,longbridge,tencent,akshare,yfinance",
         "screening_enabled": False,
         "agent_event_monitor_enabled": False,
     }
@@ -111,6 +111,7 @@ def test_realtime_dataset_degrades_when_first_priority_source_is_unconfigured() 
     manager = _FetcherManager([
         _Fetcher("EfinanceFetcher", 0, available=True),
         _Fetcher("AkshareFetcher", 1, available=True),
+        _Fetcher("TencentFetcher", 5, available=True),
         _Fetcher("YfinanceFetcher", 4, available=True),
     ])
     service = DataCapabilityService(
@@ -232,7 +233,7 @@ def test_hk_realtime_priority_skips_futu_when_opend_is_unconfigured() -> None:
     priorities = {item["scenario"]: item for item in overview["priorities"]}
     hk_quality = _dataset(overview, "quote.realtime")["coverage"]["markets"]["hk"]
 
-    assert priorities["hk.realtime"]["providers"] == ["longbridge", "akshare", "yfinance"]
+    assert priorities["hk.realtime"]["providers"] == ["longbridge", "tencent", "akshare", "yfinance"]
     assert "futu" not in hk_quality["fallback_from"]
 
 

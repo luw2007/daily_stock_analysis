@@ -177,3 +177,54 @@ class TestHKRealtimeRouting(unittest.TestCase):
         self.assertIs(quote, futu_quote)
         self.assertEqual(len(futu.calls), 1)
         self.assertEqual(akshare.calls, [])
+
+
+    @patch("data_provider.futu_fetcher.FutuFetcher.has_configured_endpoint", return_value=False)
+    @patch("src.config.get_config")
+    def test_default_hk_chain_tries_tencent_before_degenerate_akshare(self, mock_get_config, _mock_has_ep):
+        from src.config import Config
+
+        mock_get_config.return_value = SimpleNamespace(
+            enable_realtime_quote=True,
+            realtime_source_priority="tencent,akshare_sina,efinance,akshare_em,tushare",
+            futu_hk_realtime_source_priority=Config.futu_hk_realtime_source_priority,
+            realtime_cache_ttl=None,
+        )
+        self.assertEqual(
+            Config.futu_hk_realtime_source_priority.split(","),
+            ["futu", "longbridge", "tencent", "akshare", "yfinance"],
+        )
+        tencent_quote = MagicMock()
+        tencent_quote.has_basic_data.return_value = True
+        for field in DataFetcherManager._SUPPLEMENT_FIELDS:
+            setattr(tencent_quote, field, 1.0)
+        tencent = _DummyFetcher("TencentFetcher", 5, result=tencent_quote)
+        longbridge = _DummyFetcher("LongbridgeFetcher", 3, result=None)
+        akshare = _DummyFetcher("AkshareFetcher", 1, result=MagicMock())
+
+        manager = DataFetcherManager(fetchers=[akshare, longbridge, tencent])
+        quote = manager.get_realtime_quote("HK00700")
+
+        self.assertIs(quote, tencent_quote)
+        self.assertEqual(tencent.calls, [(("HK00700",), {})])
+        self.assertEqual(akshare.calls, [])
+
+    @patch("data_provider.futu_fetcher.FutuFetcher.has_configured_endpoint", return_value=False)
+    @patch("src.config.get_config")
+    def test_tencent_failure_falls_back_to_akshare_with_fallback_from(self, mock_get_config, _mock_has_ep):
+        mock_get_config.return_value = SimpleNamespace(
+            enable_realtime_quote=True,
+            realtime_source_priority="tencent,akshare_sina,efinance,akshare_em,tushare",
+            futu_hk_realtime_source_priority="tencent,akshare",
+            realtime_cache_ttl=None,
+        )
+        akshare_quote = MagicMock()
+        akshare_quote.has_basic_data.return_value = True
+        tencent = _DummyFetcher("TencentFetcher", 5, result=None)
+        akshare = _DummyFetcher("AkshareFetcher", 1, result=akshare_quote)
+
+        manager = DataFetcherManager(fetchers=[akshare, tencent])
+        quote = manager.get_realtime_quote("HK00700")
+
+        self.assertIs(quote, akshare_quote)
+        self.assertEqual(getattr(quote, "fallback_from", None), "tencent")

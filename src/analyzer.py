@@ -4356,7 +4356,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             amount_label = "Realtime Turnover" if realtime_overlay_quote else "Turnover"
             open_label, high_label, low_label = "Open", "High", "Low"
         else:
-            price_unit = " 元"
+            price_unit = " 港元" if self._turnover_currency_unit(code) == "港元" else " 元"
             pct_chg_label = "实时涨跌幅" if realtime_overlay_quote else "涨跌幅"
             volume_label = "实时成交量" if realtime_overlay_quote else "成交量"
             amount_label = "实时成交额" if realtime_overlay_quote else "成交额"
@@ -4376,7 +4376,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             [
                 f"| {pct_chg_label} | {today.get('pct_chg', 'N/A')}% |",
                 f"| {volume_label} | {self._format_volume(today.get('volume'), report_language)} |",
-                f"| {amount_label} | {self._format_amount(today.get('amount'), report_language)} |",
+                f"| {amount_label} | {self._format_amount(today.get('amount'), report_language, self._turnover_currency_unit(code))} |",
             ]
         )
         quote_rows_text = "\n".join(quote_rows)
@@ -4488,8 +4488,8 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | **换手率** | **{rt.get('turnover_rate', 'N/A')}%** | |
 | 市盈率(动态) | {rt.get('pe_ratio', 'N/A')} | |
 | 市净率 | {rt.get('pb_ratio', 'N/A')} | |
-| 总市值 | {self._format_amount(rt.get('total_mv'))} | |
-| 流通市值 | {self._format_amount(rt.get('circ_mv'))} | |
+| 总市值 | {self._format_amount(rt.get('total_mv'), 'zh', self._turnover_currency_unit(code))} | |
+| 流通市值 | {self._format_amount(rt.get('circ_mv'), 'zh', self._turnover_currency_unit(code))} | |
 | 60日涨跌幅 | {rt.get('change_60d', 'N/A')}% | 中期表现 |
 """
 
@@ -5105,18 +5105,30 @@ Output the complete Decision Dashboard in JSON format."""
         else:
             return f"{volume:.0f} 股"
     
-    def _format_amount(self, amount: Optional[float], report_language: str = "zh") -> str:
-        """格式化成交额显示"""
+    def _format_amount(
+        self,
+        amount: Optional[float],
+        report_language: str = "zh",
+        currency_unit: str = "元",
+    ) -> str:
+        """格式化成交额显示；港股成交额以港元计，调用方传入 currency_unit="港元"。"""
         if amount is None:
             return 'N/A'
         if normalize_report_language(report_language) in ("en", "ko"):
             return self._format_scaled_number_en(amount)
         if amount >= 1e8:
-            return f"{amount / 1e8:.2f} 亿元"
+            return f"{amount / 1e8:.2f} 亿{currency_unit}"
         elif amount >= 1e4:
-            return f"{amount / 1e4:.2f} 万元"
+            return f"{amount / 1e4:.2f} 万{currency_unit}"
         else:
-            return f"{amount:.0f} 元"
+            return f"{amount:.0f} {currency_unit}"
+
+    @staticmethod
+    def _turnover_currency_unit(code: Any) -> str:
+        """港股成交额币种为港元，其余沿用人民币「元」。"""
+        from data_provider import is_hk_stock_code
+
+        return "港元" if is_hk_stock_code(str(code or "")) else "元"
 
     @staticmethod
     def _format_scaled_number_en(value: float) -> str:
@@ -5182,7 +5194,9 @@ Output the complete Decision Dashboard in JSON format."""
             "change_amount": self._format_price(change_amount),
             "amplitude": self._format_percent(amplitude),
             "volume": self._format_volume(today.get('volume')),
-            "amount": self._format_amount(today.get('amount')),
+            "amount": self._format_amount(
+                today.get('amount'), currency_unit=self._turnover_currency_unit(context.get('code'))
+            ),
         }
 
         if realtime:

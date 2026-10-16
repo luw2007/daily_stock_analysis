@@ -946,19 +946,19 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "FUTU_HK_REALTIME_SOURCE_PRIORITY": {
         "title": "Futu 港股实时数据源优先级",
-        "description": "港股实时行情优先级，可选 futu、longbridge、akshare、yfinance。未配置 OpenD 时自动跳过 futu。",
+        "description": "港股实时行情优先级，可选 futu、longbridge、tencent、akshare、yfinance。未配置 OpenD 时自动跳过 futu。",
         "category": "data_source",
         "data_type": "string",
         "ui_control": "text",
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "futu,longbridge,akshare,yfinance",
+        "default_value": "futu,longbridge,tencent,akshare,yfinance",
         "options": [],
         "validation": {},
         "display_order": 22,
         "help_key": "settings.data_source.FUTU_HK_REALTIME_SOURCE_PRIORITY",
-        "examples": ["FUTU_HK_REALTIME_SOURCE_PRIORITY=futu,longbridge,akshare,yfinance"],
+        "examples": ["FUTU_HK_REALTIME_SOURCE_PRIORITY=futu,longbridge,tencent,akshare,yfinance"],
         "docs": [
             {
                 "label": "数据源配置指南",

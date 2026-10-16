@@ -411,6 +411,59 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
         )
         self.assertEqual(enhanced["today"]["close"], 15.0)
 
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="hk")
+    def test_missing_realtime_ohlc_is_not_fabricated_from_prev_close_or_price(
+        self, _mock_market, mock_now
+    ) -> None:
+        today = date.today()
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+        )
+        context = {
+            "code": "HK00700",
+            "date": (today - timedelta(days=1)).isoformat(),
+            "today": {"close": 417.8, "open": 415.0, "high": 422.6, "low": 414.0},
+            "yesterday": {"close": 417.8, "volume": 20676017},
+        }
+        # AkShare 备用港股行情只给 价格/涨跌/量额：开高低昨收均缺失。
+        quote = UnifiedRealtimeQuote(
+            code="HK00700",
+            name="腾讯控股",
+            source=RealtimeSource.AKSHARE_EM,
+            price=417.8,
+            change_pct=0.0,
+            volume=18752869,
+        )
+        trend = TrendAnalysisResult(
+            code="HK00700", trend_status=TrendStatus.BULL, ma5=420.0, ma10=419.0, ma20=418.0
+        )
+
+        enhanced = self.pipeline._enhance_context(context, quote, None, trend, "腾讯控股")
+
+        today_ctx = enhanced["today"]
+        self.assertEqual(today_ctx["close"], 417.8)
+        for key in ("open", "high", "low"):
+            self.assertNotIn(key, today_ctx)
+            self.assertNotIn(key, today_ctx["estimated_fields"])
+
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="hk")
+    def test_augment_keeps_missing_ohlc_as_nan(self, _mock_market, mock_now) -> None:
+        today = date.today()
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+        )
+        df = _make_historical_df(last_date=today - timedelta(days=1), days=25)
+        quote = UnifiedRealtimeQuote(
+            code="HK00700", source=RealtimeSource.AKSHARE_EM, price=417.8, volume=100
+        )
+        with patch("src.core.pipeline.is_market_open", return_value=True):
+            result = self.pipeline._augment_historical_with_realtime(df, quote, "HK00700", market="hk")
+        last = result.iloc[-1]
+        self.assertEqual(last["close"], 417.8)
+        self.assertTrue(pd.isna(last["open"]) and pd.isna(last["high"]) and pd.isna(last["low"]))
+
     def test_today_not_overridden_when_trend_ma_zero(self) -> None:
         """StockTrendAnalyzer 因数据不足提前返回 ma5=0.0 时，不应覆盖 today。"""
         context = {"code": "600519", "today": {"close": 15.0, "ma5": 14.8}}

@@ -2517,13 +2517,14 @@ class DataFetcherManager:
                     for source in getattr(
                         config,
                         "futu_hk_realtime_source_priority",
-                        "futu,longbridge,akshare,yfinance",
+                        "futu,longbridge,tencent,akshare,yfinance",
                     ).split(",")
                     if source.strip()
                 ]
                 source_map = {
                     "futu": ("FutuFetcher", {}),
                     "longbridge": ("LongbridgeFetcher", {}),
+                    "tencent": ("TencentFetcher", {}),
                     "akshare": ("AkshareFetcher", {"source": "hk"}),
                     "yfinance": ("YfinanceFetcher", {}),
                 }

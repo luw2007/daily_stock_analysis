@@ -377,7 +377,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `TICKFLOW_BATCH_SIZE` | Maximum symbols per TickFlow batch request. | `100` | Optional |
 | `FUTU_OPEND_HOST` | Futu OpenD address; use an IPv4 address or an IPv4-resolvable hostname. Leave empty to disable Futu market data. | empty | Optional |
 | `FUTU_OPEND_PORT` | Futu OpenD TCP port, from `1` to `65535`. | `11111` | Optional |
-| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | HK realtime source order: `futu`, `longbridge`, `akshare`, or `yfinance`, comma-separated. Failed sources fall back automatically. | `futu,longbridge,akshare,yfinance` | Optional |
+| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | HK realtime source order: `futu`, `longbridge`, `tencent`, `akshare`, or `yfinance`, comma-separated. Failed sources fall back automatically. | `futu,longbridge,tencent,akshare,yfinance` | Optional |
 | `ENABLE_REALTIME_QUOTE` | Enable real-time quotes (if disabled, uses historical closing prices for analysis) | `true` | Optional |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | Intraday real-time technicals: Calculate MA5/MA10/MA20 and bull trends using real-time prices when enabled (Issue #234); uses yesterday's close if disabled. | `true` | Optional |
 | `ENABLE_CHIP_DISTRIBUTION` | Enable chip distribution analysis (this API is unstable, recommended to disable for cloud deployment). GitHub Actions users must set `ENABLE_CHIP_DISTRIBUTION=true` in Repository Variables to enable; disabled by default in workflows. | `true` | Optional |

@@ -593,3 +593,65 @@ def test_hk_daily_routing_includes_tencent_and_manager_falls_back_to_it() -> Non
         df, source = manager.get_daily_data("HK00700", start_date="2026-10-01", end_date="2026-10-16")
     assert source == "TencentFetcher"
     assert float(df.iloc[-1]["close"]) == 417.8
+
+
+# Real qt.gtimg.cn ``r_hk00700`` payload captured 2026-10-16 (post-close).
+_HK_QUOTE_00700 = (
+    'v_r_hk00700="100~腾讯控股~00700~417.800~417.800~424.000~18752869.0~0~0~417.800~0~0~0~0~0~0~0~0~0~417.800~0~0~0~0~0~0~0~0~0~18752869.0~2026/10/16 16:08:22~0.000~0.00~428.800~415.800~417.800~18752869.0~7901198756.124~0~15.26~~0~0~3.11~37989.0701~37989.0701~TENCENT~1.27~658.700~411.000~1.07~-3.13~0~0~0~0~0~14.01~2.92~0.21~100~-29.63~-1.65~GP~20.41~11.00~-0.81~-1.92~-6.15~9092644829.00~9092644829.00~14.46~5.315~421.333~-29.45~HKD~1~50";\n'
+)
+
+
+def _quote_response(text: str):
+    response = MagicMock()
+    response.text = text
+    return response
+
+
+def test_tencent_hk_realtime_quote_maps_real_ohlc_units_and_timestamp() -> None:
+    with patch(
+        "data_provider.tencent_fetcher.requests.get",
+        return_value=_quote_response(_HK_QUOTE_00700),
+    ) as mock_get:
+        quote = TencentFetcher().get_realtime_quote("HK00700")
+
+    assert mock_get.call_args.args[0].endswith("q=r_hk00700")
+    assert quote is not None
+    assert quote.code == "HK00700"
+    assert quote.name == "腾讯控股"
+    assert quote.source.value == "tencent"
+    assert (quote.open_price, quote.high, quote.low, quote.price) == (424.0, 428.8, 415.8, 417.8)
+    assert quote.pre_close == 417.8
+    assert quote.volume == 18752869  # shares
+    assert quote.amount == 7901198756.124  # HKD
+    assert quote.currency == "HKD" and quote.market == "hk"
+    assert quote.provider_timestamp == "2026-10-16T16:08:22+08:00"
+
+
+def test_tencent_hk_realtime_quote_leaves_zero_fields_missing() -> None:
+    fields = _HK_QUOTE_00700.split("~")
+    for index in (5, 33, 34):  # open / high / low reported as 0
+        fields[index] = "0.000"
+    with patch(
+        "data_provider.tencent_fetcher.requests.get",
+        return_value=_quote_response("~".join(fields)),
+    ):
+        quote = TencentFetcher().get_realtime_quote("HK00700")
+    assert quote is not None and quote.price == 417.8
+    assert quote.open_price is None and quote.high is None and quote.low is None
+
+
+def test_tencent_hk_realtime_quote_rejects_non_hk_and_mismatched_payload() -> None:
+    fetcher = TencentFetcher()
+    with patch("data_provider.tencent_fetcher.requests.get") as mock_get:
+        assert fetcher.get_realtime_quote("600031") is None
+        mock_get.assert_not_called()
+    with patch(
+        "data_provider.tencent_fetcher.requests.get",
+        return_value=_quote_response(_HK_QUOTE_00700.replace("~00700~", "~09999~", 1)),
+    ):
+        assert fetcher.get_realtime_quote("HK00700") is None
+    with patch(
+        "data_provider.tencent_fetcher.requests.get",
+        return_value=_quote_response('v_pv_none_match="1";'),
+    ):
+        assert fetcher.get_realtime_quote("HK00700") is None

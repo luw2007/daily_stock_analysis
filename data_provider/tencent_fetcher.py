@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import pandas as pd
@@ -24,6 +24,7 @@ from .base import (
     is_bse_code,
     normalize_stock_code,
 )
+from .realtime_types import RealtimeSource, UnifiedRealtimeQuote, safe_float, safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,88 @@ class TencentFetcher(BaseFetcher):
                 exc_info=True,
             )
             return None
+
+    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """Hong Kong realtime snapshot from ``qt.gtimg.cn`` (``r_hkXXXXX``).
+
+        Only HK codes are served; A-share realtime keeps its own chain. Fields
+        that the payload does not carry as a positive number stay ``None``
+        instead of being synthesised from the last price.
+        """
+        symbol = _to_tencent_hk_symbol(stock_code)
+        if not symbol:
+            return None
+        response = requests.get(
+            f"{self._QUOTE_ENDPOINT}=r_{symbol}",
+            headers={"Referer": "https://finance.qq.com", "User-Agent": "Mozilla/5.0"},
+            timeout=self._HTTP_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        response.encoding = "gbk"
+        return _parse_hk_realtime_quote(response.text, symbol=symbol, stock_code=stock_code)
+
+
+# qt.gtimg.cn ``r_hkXXXXX`` field layout (verified against live 00700/03800/06862
+# on 2026-10-16): 1 name, 2 code, 3 last, 4 prev close, 5 open, 6 volume (shares),
+# 30 "YYYY/MM/DD HH:MM:SS" (HK time), 31 change, 32 change %, 33 high, 34 low,
+# 36 volume (shares), 37 turnover (HKD), 43 amplitude %, 44/45 market cap
+# (100M HKD), 48/49 52-week high/low, 75 currency.
+_HK_QUOTE_TZ = timezone(timedelta(hours=8))
+
+
+def _positive_float(value: Any) -> Optional[float]:
+    number = safe_float(value)
+    return number if number is not None and number > 0 else None
+
+
+def _hk_quote_timestamp(value: str) -> Optional[str]:
+    try:
+        parsed = datetime.strptime(value.strip(), "%Y/%m/%d %H:%M:%S")
+    except (AttributeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=_HK_QUOTE_TZ).isoformat()
+
+
+def _parse_hk_realtime_quote(
+    content: str, *, symbol: str, stock_code: str
+) -> Optional[UnifiedRealtimeQuote]:
+    content = (content or "").strip()
+    data_start = content.find('"')
+    data_end = content.rfind('"')
+    if data_start == -1 or data_end <= data_start:
+        return None
+    fields = content[data_start + 1:data_end].split("~")
+    if len(fields) < 38 or fields[2].strip() != symbol[2:]:
+        return None
+    price = _positive_float(fields[3])
+    if price is None:
+        return None
+    pre_close = _positive_float(fields[4])
+    volume = safe_int(fields[36])
+    total_mv = _positive_float(fields[44]) if len(fields) > 44 else None
+    circ_mv = _positive_float(fields[45]) if len(fields) > 45 else None
+    return UnifiedRealtimeQuote(
+        code=normalize_stock_code(stock_code),
+        name=fields[1].strip(),
+        source=RealtimeSource.TENCENT,
+        provider_timestamp=_hk_quote_timestamp(fields[30]),
+        market="hk",
+        currency=(fields[75].strip().upper() if len(fields) > 75 and fields[75].strip() else "HKD"),
+        price=price,
+        change_pct=safe_float(fields[32]),
+        change_amount=safe_float(fields[31]),
+        volume=volume if volume and volume > 0 else None,
+        amount=_positive_float(fields[37]),
+        amplitude=_positive_float(fields[43]) if len(fields) > 43 else None,
+        open_price=_positive_float(fields[5]),
+        high=_positive_float(fields[33]),
+        low=_positive_float(fields[34]),
+        pre_close=pre_close,
+        total_mv=total_mv * 1e8 if total_mv else None,
+        circ_mv=circ_mv * 1e8 if circ_mv else None,
+        high_52w=_positive_float(fields[48]) if len(fields) > 48 else None,
+        low_52w=_positive_float(fields[49]) if len(fields) > 49 else None,
+    )
 
 
 def _to_tencent_hk_symbol(stock_code: str) -> str:

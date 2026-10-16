@@ -67,7 +67,8 @@ _PROVIDER_DEFINITIONS: Sequence[_ProviderDefinition] = (
         label="Tencent",
         fetcher_name="TencentFetcher",
         dataset_markets={
-            "kline.daily": ("cn",),
+            "quote.realtime": ("hk",),
+            "kline.daily": ("cn", "hk"),
             "index.daily": ("cn",),
         },
         builtin=True,
@@ -421,7 +422,7 @@ class DataCapabilityService:
                 "hk.realtime",
                 hk_realtime_priority,
                 "Config.futu_hk_realtime_source_priority",
-                known_sources={"futu", "longbridge", "akshare", "yfinance"},
+                known_sources={"futu", "longbridge", "tencent", "akshare", "yfinance"},
             ),
             self._priority_view(
                 "us.realtime",
@@ -809,7 +810,7 @@ class DataCapabilityService:
         self,
         provider_map: Dict[str, Dict[str, Any]],
     ) -> Callable[[str], str]:
-        supported_sources = {"futu", "longbridge", "akshare", "yfinance"}
+        supported_sources = {"futu", "longbridge", "tencent", "akshare", "yfinance"}
 
         def resolve(token: str) -> str:
             if token not in supported_sources:
@@ -826,6 +827,9 @@ class DataCapabilityService:
                         return "cooldown"
                 except Exception as exc:  # noqa: BLE001 - diagnostics must fail open.
                     logger.debug("Failed to read HK realtime circuit status: %s", exc)
+            if token == "tencent":
+                provider = provider_map.get("tencent")
+                return str((provider or {}).get("status") or "unknown")
             return DataCapabilityService._source_token_status(token, provider_map)
 
         return resolve

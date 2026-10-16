@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] `TencentFetcher` 支持港股日 K：走 `hkfqkline` 接口取前复权 `qfqday`（成交量为股，成交额由万港元换算为港元），并加入港股日线支持矩阵作为 Akshare/YFinance 等之后的兜底（默认优先级 5，可用 `TENCENT_PRIORITY` 调整）；若接口只返回未复权 `day` 则视为失败，不冒充 qfq。A 股行为不变。
+- [新功能] 港股实时行情新增 Tencent 源（`qt.gtimg.cn` `r_hkXXXXX`，含真实开/高/低/昨收、成交量（股）、成交额（港元）与行情时间 HKT），token 为 `tencent`，加入 `FUTU_HK_REALTIME_SOURCE_PRIORITY` 默认链 `futu,longbridge,tencent,akshare,yfinance`（排在会返回退化行情的 AkShare 之前）；已显式配置该变量的用户需自行加入 `tencent`。
+- [修复] 实时行情缺失开/高/低时不再用昨收/现价伪造（原先会得到“开盘=昨收、最高=最低=收盘、振幅 0”的当日行情表）；缺失字段保持 N/A，趋势 MA 仅依赖收盘价不受影响。
+- [改进] 港股「当日行情」成交额与总市值/流通市值标注「港元」，A 股仍为「元」。
 
 ## [3.33.0] - 2026-10-15
 

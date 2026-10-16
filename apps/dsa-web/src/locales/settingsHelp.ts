@@ -385,8 +385,8 @@ const settingsHelpZhCN: SettingsHelpMap = {
   },
   'settings.data_source.FUTU_HK_REALTIME_SOURCE_PRIORITY': {
     title: 'Futu 港股实时数据源优先级',
-    summary: '配置港股实时行情的 Futu/Longbridge/AkShare/Yfinance 尝试顺序。',
-    usage: '使用英文逗号分隔，可选 futu、longbridge、akshare、yfinance。',
+    summary: '配置港股实时行情的 Futu/Longbridge/Tencent/AkShare/Yfinance 尝试顺序。',
+    usage: '使用英文逗号分隔，可选 futu、longbridge、tencent、akshare、yfinance。',
     valueNotes: ['前面的数据源优先尝试；失败后自动回退。'],
     impact: ['只影响港股实时行情，不改变 A 股实时数据源优先级。'],
     notes: ['未配置 Futu OpenD 时会自动跳过 futu。'],
@@ -1597,8 +1597,8 @@ const settingsHelpEnUS: SettingsHelpMap = {
   },
   'settings.data_source.FUTU_HK_REALTIME_SOURCE_PRIORITY': {
     title: 'Futu HK Realtime Source Priority',
-    summary: 'Configures the Futu/Longbridge/AkShare/Yfinance order for HK realtime quotes.',
-    usage: 'Use comma-separated futu, longbridge, akshare, or yfinance values.',
+    summary: 'Configures the Futu/Longbridge/Tencent/AkShare/Yfinance order for HK realtime quotes.',
+    usage: 'Use comma-separated futu, longbridge, tencent, akshare, or yfinance values.',
     valueNotes: ['Earlier providers are tried first; failures fall back automatically.'],
     impact: ['Affects HK realtime quotes only, not A-share realtime priority.'],
     notes: ['The futu entry is skipped when OpenD is not configured.'],

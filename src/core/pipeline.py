@@ -1111,11 +1111,11 @@ class StockAnalysisPipeline:
                 source = getattr(realtime_quote, 'source', None)
                 source_name = getattr(source, 'value', source)
                 source_name = str(source_name) if source_name is not None else 'unknown'
-                open_p = getattr(realtime_quote, 'open_price', None) or getattr(
-                    realtime_quote, 'pre_close', None
-                ) or yesterday_close or orig_today.get('open') or price
-                high_p = getattr(realtime_quote, 'high', None) or price
-                low_p = getattr(realtime_quote, 'low', None) or price
+                # 缺失的 OHLC 保持缺失：不得用昨收/现价冒充开盘、最高、最低
+                #（否则报告会展示 开盘=昨收、最高=最低=收盘 的伪 K 线）。
+                open_p = getattr(realtime_quote, 'open_price', None)
+                high_p = getattr(realtime_quote, 'high', None)
+                low_p = getattr(realtime_quote, 'low', None)
                 vol = getattr(realtime_quote, 'volume', None)
                 amt = getattr(realtime_quote, 'amount', None)
                 pct = getattr(realtime_quote, 'change_pct', None)
@@ -1124,9 +1124,6 @@ class StockAnalysisPipeline:
                 fallback_from = getattr(realtime_quote, 'fallback_from', None)
                 realtime_today = {
                     'close': price,
-                    'open': open_p,
-                    'high': high_p,
-                    'low': low_p,
                     'ma5': trend_result.ma5,
                     'ma10': trend_result.ma10,
                     'ma20': trend_result.ma20,
@@ -1135,9 +1132,12 @@ class StockAnalysisPipeline:
                     'realtime_source': source_name,
                     'is_estimated': True,
                 }
-                estimated_fields = [
-                    'close', 'open', 'high', 'low', 'ma5', 'ma10', 'ma20',
-                ]
+                estimated_fields = ['close']
+                for _key, _val in (('open', open_p), ('high', high_p), ('low', low_p)):
+                    if _val is not None:
+                        realtime_today[_key] = _val
+                        estimated_fields.append(_key)
+                estimated_fields.extend(['ma5', 'ma10', 'ma20'])
                 if vol is not None:
                     realtime_today['volume'] = vol
                     estimated_fields.append('volume')
@@ -2767,11 +2767,10 @@ class StockAnalysisPipeline:
             (last_val if isinstance(last_val, date) else pd.Timestamp(last_val).date())
         )
         yesterday_close = float(df.iloc[-1]['close']) if len(df) > 0 else price
-        open_p = getattr(realtime_quote, 'open_price', None) or getattr(
-            realtime_quote, 'pre_close', None
-        ) or yesterday_close
-        high_p = getattr(realtime_quote, 'high', None) or price
-        low_p = getattr(realtime_quote, 'low', None) or price
+        # 缺失的 OHLC 保持缺失（NaN），不用昨收/现价伪造；MA 仅依赖 close。
+        open_p = getattr(realtime_quote, 'open_price', None)
+        high_p = getattr(realtime_quote, 'high', None)
+        low_p = getattr(realtime_quote, 'low', None)
         vol = getattr(realtime_quote, 'volume', None) or 0
         amt = getattr(realtime_quote, 'amount', None)
         pct = getattr(realtime_quote, 'change_pct', None)

@@ -638,3 +638,20 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_turnover_unit_is_hkd_for_hk_codes_and_yuan_for_a_shares() -> None:
+    with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+        analyzer = GeminiAnalyzer()
+
+    hk_unit = analyzer._turnover_currency_unit("HK00700")
+    a_unit = analyzer._turnover_currency_unit("600031")
+    assert (hk_unit, a_unit) == ("港元", "元")
+    assert analyzer._format_amount(7901198756.124, currency_unit=hk_unit) == "79.01 亿港元"
+    assert analyzer._format_amount(1086685693.0, currency_unit=a_unit) == "10.87 亿元"
+    assert analyzer._format_amount(1086685693.0) == "10.87 亿元"
+    snapshot = analyzer._build_market_snapshot(
+        {"code": "HK00700", "today": {"close": 417.8, "amount": 7901198756.124}, "yesterday": {"close": 417.8}}
+    )
+    assert snapshot["amount"] == "79.01 亿港元"
+    assert snapshot["open"] == "N/A"
